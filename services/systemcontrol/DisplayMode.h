@@ -303,7 +303,8 @@ private:
     void axisStr(const axis_t *axis, char *str);
 
     int getBootenvInt(const char* key, int defaultVal);
-    void hdcpAuthenticate();
+    bool hdcpInit(bool *pHdcp22, bool *pHdcp14);
+    void hdcpAuthenticate(bool useHdcp22, bool useHdcp14);
 
     std::map<std::string, axis_t> mVideoAxisMap;
 

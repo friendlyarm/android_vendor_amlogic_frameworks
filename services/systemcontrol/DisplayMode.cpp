@@ -617,9 +617,6 @@ void DisplayMode::setMboxOutputMode(const char* outputmode, bool initState) {
     int position[4] = { 0, 0, 0, 0 };
     bool cvbsMode = false;
 
-    //first close osd, after HDCP authenticate completely, then open osd
-    pSysWrite->writeSysfs(DISPLAY_FB0_BLANK, "1");
-
     if (!initState) {
         pSysWrite->writeSysfs(DISPLAY_HDMI_AVMUTE, "1");
         usleep(30000);//30ms
@@ -649,7 +646,8 @@ void DisplayMode::setMboxOutputMode(const char* outputmode, bool initState) {
         pSysWrite->writeSysfs(SYSFS_DISPLAY_MODE2, "null");
     }
     else {
-        if (!strcmp(outputmode, MODE_480CVBS) || !strcmp(outputmode, MODE_576CVBS))
+        if (!strcmp(outputmode, MODE_480CVBS) || !strcmp(outputmode, MODE_576CVBS) ||
+            !strcmp(outputmode, MODE_480P) || !strcmp(outputmode, MODE_576P))
             cvbsMode = true;
 
         pSysWrite->writeSysfs(SYSFS_DISPLAY_MODE, outputmode);
@@ -668,7 +666,14 @@ void DisplayMode::setMboxOutputMode(const char* outputmode, bool initState) {
 
     //only HDMI mode need HDCP authenticate
     if (!cvbsMode) {
-        hdcpAuthenticate();
+        bool hdcp22 = false;
+        bool hdcp14 = false;
+        if (hdcpInit(&hdcp22, &hdcp14)) {
+            //first close osd, after HDCP authenticate completely, then open osd
+            pSysWrite->writeSysfs(DISPLAY_FB0_BLANK, "1");
+
+            hdcpAuthenticate(hdcp22, hdcp14);
+        }
     }
 
     if (initState) {
@@ -994,7 +999,7 @@ void DisplayMode::startBootanimDetectThread() {
 //if detected bootanim is running, then close uboot logo
 void* DisplayMode::bootanimDetect(void* data) {
     DisplayMode *pThiz = (DisplayMode*)data;
-    char state_bootanim[MODE_LEN] = {"sleep"};
+    char bootanimState[MODE_LEN] = {"stopped"};
     char fs_mode[MODE_LEN] = {0};
     char outputmode[MODE_LEN] = {0};
     char bootvideo[MODE_LEN] = {0};
@@ -1008,9 +1013,9 @@ void* DisplayMode::bootanimDetect(void* data) {
         //don't run after about 4s, exit the loop.
         int timeout = 40;
         while (timeout > 0) {
-            pThiz->pSysWrite->getPropertyString(PROP_BOOTANIM, state_bootanim, "sleep");
-            //boot animation or boot video is running
-            if (!strcmp(state_bootanim, "running"))
+            //init had started boot animation, will set init.svc.* running
+            pThiz->pSysWrite->getPropertyString(PROP_BOOTANIM, bootanimState, "stopped");
+            if (!strcmp(bootanimState, "running"))
                 break;
 
             usleep(100000);
@@ -1022,10 +1027,16 @@ void* DisplayMode::bootanimDetect(void* data) {
     }
 
     pThiz->pSysWrite->writeSysfs(DISPLAY_LOGO_INDEX, "0");
-    //pThiz->pSysWrite->writeSysfs(DISPLAY_FB0_BLANK, "1");
+    pThiz->pSysWrite->writeSysfs(DISPLAY_FB0_BLANK, "1");
     //need close fb1, because uboot logo show in fb1
     pThiz->pSysWrite->writeSysfs(DISPLAY_FB1_BLANK, "1");
     pThiz->pSysWrite->writeSysfs(DISPLAY_FB1_FREESCALE, "0");
+
+    if (DISPLAY_TYPE_TV == pThiz->mDisplayType && !strncmp(outputmode, "1080", 4)) {
+        pThiz->pSysWrite->writeSysfs(DISPLAY_FB0_FREESCALE, "0");
+    } else {
+        pThiz->pSysWrite->writeSysfs(DISPLAY_FB0_FREESCALE, "0x10001");
+    }
 
     pThiz->pSysWrite->getPropertyString(PROP_BOOTVIDEO_SERVICE, bootvideo, "0");
     SYS_LOGI("boot animation detect boot video:%s\n", bootvideo);
@@ -1033,11 +1044,6 @@ void* DisplayMode::bootanimDetect(void* data) {
     if (strcmp(bootvideo, "1")) {
         //open fb0, let bootanimation show in it
         pThiz->pSysWrite->writeSysfs(DISPLAY_FB0_BLANK, "0");
-        if (DISPLAY_TYPE_TV == pThiz->mDisplayType && !strncmp(outputmode, "1080", 4)) {
-            pThiz->pSysWrite->writeSysfs(DISPLAY_FB0_FREESCALE, "0");
-        } else {
-            pThiz->pSysWrite->writeSysfs(DISPLAY_FB0_FREESCALE, "0x10001");
-        }
     }
 
     pThiz->setOsdMouse(outputmode);
@@ -1443,7 +1449,61 @@ int DisplayMode::modeToIndex(const char *mode) {
     return index;
 }
 
-void DisplayMode::hdcpAuthenticate() {
+bool DisplayMode::hdcpInit(bool *pHdcp22, bool *pHdcp14) {
+    bool useHdcp22 = false;
+    bool useHdcp14 = false;
+#ifdef HDCP_AUTHENTICATION
+    char hdcpRxVer[MODE_LEN] = {0};
+    char hdcpTxKey[MODE_LEN] = {0};
+
+    //14 22 00 HDCP TX
+    pSysWrite->readSysfs(DISPLAY_HDMI_HDCP_KEY, hdcpTxKey);
+    SYS_LOGI("HDCP TX key:%s\n", hdcpTxKey);
+    if ((strlen(hdcpTxKey) == 0) || !(strcmp(hdcpTxKey, "00")))
+        return false;
+
+    //14 22 00 HDCP RX
+    pSysWrite->readSysfs(DISPLAY_HDMI_HDCP_VER, hdcpRxVer);
+    SYS_LOGI("HDCP RX version:%s\n", hdcpRxVer);
+    if ((strlen(hdcpRxVer) == 0) || !(strcmp(hdcpRxVer, "00")))
+        return false;
+
+    char cap[MAX_STR_LEN] = {0};
+    pSysWrite->readSysfsOriginal(DISPLAY_HDMI_EDID, cap);
+    if ((_strstr(cap, (char *)"2160p") != NULL) && (_strstr(hdcpRxVer, (char *)"22") != NULL) &&
+        (_strstr(hdcpTxKey, (char *)"22") != NULL)) {
+        useHdcp22 = true;
+        pSysWrite->writeSysfs(DISPLAY_HDMI_HDCP_MODE, DISPLAY_HDMI_HDCP_22);
+
+        SYS_LOGI("HDCP 2.2, stop hdcp_tx22, init will kill hdcp_tx22\n");
+        pSysWrite->setProperty("ctl.stop", "hdcp_tx22");
+        usleep(50*1000);
+        SYS_LOGI("HDCP 2.2, start hdcp_tx22\n");
+        pSysWrite->setProperty("ctl.start", "hdcp_tx22");
+    }
+
+    if (!useHdcp22 && (_strstr(hdcpRxVer, (char *)"14") != NULL) &&
+        ((_strstr(hdcpTxKey, (char *)"22") != NULL) || (_strstr(hdcpTxKey, (char *)"14") != NULL))) {
+        useHdcp14 = true;
+        SYS_LOGI("HDCP 1.4\n");
+        pSysWrite->writeSysfs(DISPLAY_HDMI_HDCP_MODE, DISPLAY_HDMI_HDCP_14);
+    }
+
+    if (!useHdcp22 && !useHdcp14) {
+        //do not support hdcp1.4 and hdcp2.2
+        SYS_LOGE("device do not support hdcp1.4 or hdcp2.2\n");
+        return false;
+    }
+#endif
+    *pHdcp22 = useHdcp22;
+    *pHdcp14 = useHdcp14;
+    return true;
+}
+
+void DisplayMode::hdcpAuthenticate(bool useHdcp22, bool useHdcp14) {
+#ifdef HDCP_AUTHENTICATION
+
+#if 0
     bool useHdcp22 = false;
     bool useHdcp14 = false;
     char hdcpVer[MODE_LEN] = {0};
@@ -1461,7 +1521,6 @@ void DisplayMode::hdcpAuthenticate() {
     if ((strlen(hdcpVer) == 0) || !(strcmp(hdcpVer, "00")))
         return;
 
-#ifdef HDCP_AUTHENTICATION
     char cap[MAX_STR_LEN] = {0};
     pSysWrite->readSysfsOriginal(DISPLAY_HDMI_EDID, cap);
     if ((_strstr(cap, (char *)"2160p") != NULL) && (_strstr(hdcpVer, (char *)"22") != NULL) &&
@@ -1488,6 +1547,7 @@ void DisplayMode::hdcpAuthenticate() {
         SYS_LOGE("device do not support hdcp1.4 or hdcp2.2\n");
         return;
     }
+#endif
 
     SYS_LOGI("begin to authenticate\n");
     int count = 0;
@@ -1520,6 +1580,9 @@ void DisplayMode::hdcpAuthenticate() {
         }
     }
     SYS_LOGI("authenticate finish\n");
+#else
+    useHdcp22 = useHdcp22;
+    useHdcp14 = useHdcp14;
 #endif
 }
 
