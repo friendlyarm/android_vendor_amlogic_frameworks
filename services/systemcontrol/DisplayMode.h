@@ -255,7 +255,8 @@ public:
     ~DisplayMode();
 
     void init();
-
+    void reInit();
+    
     void getDisplayInfo(int &type, char* socType, char* defaultUI);
     void getFbInfo(int &fb0w, int &fb0h, int &fb0bits, int &fb0trip,
         int &fb1w, int &fb1h, int &fb1bits, int &fb1trip);

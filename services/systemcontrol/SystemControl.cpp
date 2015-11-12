@@ -225,6 +225,7 @@ void SystemControl::getPosition(const String16& mode, int &x, int &y, int &w, in
 
 void SystemControl::reInit() {
     bootenv_reinit();
+    pDisplayMode->reInit();
 }
 
 void SystemControl::setNativeWindowRect(int x, int y, int w, int h) {

@@ -376,6 +376,21 @@ void DisplayMode::init() {
     }
 }
 
+void DisplayMode::reInit() {
+
+    SYS_LOGI("display mode init type: %d [0:none 1:tablet 2:mbox 3:tv], soc type:%s, default UI:%s",
+        mDisplayType, mSocType, mDefaultUI);
+    if (DISPLAY_TYPE_TABLET == mDisplayType) {
+        setTabletDisplay();
+    }
+    else if (DISPLAY_TYPE_MBOX == mDisplayType) {
+        setMboxDisplay(NULL, false);
+    }
+    else if (DISPLAY_TYPE_TV == mDisplayType) {
+        setTVDisplay();
+    }
+}
+
 void DisplayMode:: getDisplayInfo(int &type, char* socType, char* defaultUI) {
     type = mDisplayType;
     if (NULL != socType)
