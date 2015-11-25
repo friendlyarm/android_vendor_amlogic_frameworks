@@ -326,7 +326,8 @@ DisplayMode::DisplayMode(const char *path)
     mNativeWinX(0), mNativeWinY(0), mNativeWinW(0), mNativeWinH(0),
     mDisplayWidth(FULL_WIDTH_1080),
     mDisplayHeight(FULL_HEIGHT_1080),
-    mLogLevel(LOG_LEVEL_DEFAULT) {
+    mLogLevel(LOG_LEVEL_DEFAULT),
+    pthreadIdHdcp(0) {
 
     if (NULL == path) {
         pConfigPath = DISPLAY_CFG_FILE;
@@ -344,9 +345,16 @@ DisplayMode::DisplayMode(const char *path)
 DisplayMode::~DisplayMode() {
     mVideoAxisMap.clear();
     delete pSysWrite;
+
+    sem_destroy(&pthreadSem);
 }
 
 void DisplayMode::init() {
+    if (sem_init(&pthreadSem, 0, 0) < 0) {
+        SYS_LOGE("display mode, sem_init failed\n");
+        exit(0);
+    }
+
     parseConfigFile();
 
     SYS_LOGI("display mode init type: %d [0:none 1:tablet 2:mbox 3:tv], soc type:%s, default UI:%s",
@@ -646,8 +654,7 @@ void DisplayMode::setMboxOutputMode(const char* outputmode, bool initState) {
         pSysWrite->writeSysfs(SYSFS_DISPLAY_MODE2, "null");
     }
     else {
-        if (!strcmp(outputmode, MODE_480CVBS) || !strcmp(outputmode, MODE_576CVBS) ||
-            !strcmp(outputmode, MODE_480P) || !strcmp(outputmode, MODE_576P))
+        if (!strcmp(outputmode, MODE_480CVBS) || !strcmp(outputmode, MODE_576CVBS))
             cvbsMode = true;
 
         pSysWrite->writeSysfs(SYSFS_DISPLAY_MODE, outputmode);
@@ -661,11 +668,13 @@ void DisplayMode::setMboxOutputMode(const char* outputmode, bool initState) {
     sprintf(axis, "%d %d %d %d",
             outputx, outputy, outputx + outputwidth - 1, outputy + outputheight -1);
     pSysWrite->writeSysfs(DISPLAY_FB0_WINDOW_AXIS, axis);
-    setVideoAxis(preMode, outputmode);
+    //setVideoAxis(preMode, outputmode);
     setNativeWindowRect(mNativeWinX, mNativeWinY, mNativeWinW, mNativeWinH);
 
+    SYS_LOGI("setMboxOutputMode cvbsMode = %d\n", cvbsMode);
     //only HDMI mode need HDCP authenticate
     if (!cvbsMode) {
+        /*
         bool hdcp22 = false;
         bool hdcp14 = false;
         if (hdcpInit(&hdcp22, &hdcp14)) {
@@ -673,7 +682,14 @@ void DisplayMode::setMboxOutputMode(const char* outputmode, bool initState) {
             pSysWrite->writeSysfs(DISPLAY_FB0_BLANK, "1");
 
             hdcpAuthenticate(hdcp22, hdcp14);
+        }*/
+
+        if (0 != pthreadIdHdcp) {
+            hdcpThreadExit(pthreadIdHdcp);
+            pthreadIdHdcp = 0;
         }
+
+        hdcpThreadStart();
     }
 
     if (initState) {
@@ -1449,7 +1465,7 @@ int DisplayMode::modeToIndex(const char *mode) {
     return index;
 }
 
-bool DisplayMode::hdcpInit(bool *pHdcp22, bool *pHdcp14) {
+bool DisplayMode::hdcpInit(SysWrite *pSysWrite, bool *pHdcp22, bool *pHdcp14) {
     bool useHdcp22 = false;
     bool useHdcp14 = false;
 #ifdef HDCP_AUTHENTICATION
@@ -1495,12 +1511,13 @@ bool DisplayMode::hdcpInit(bool *pHdcp22, bool *pHdcp14) {
         return false;
     }
 #endif
+    pSysWrite = pSysWrite;
     *pHdcp22 = useHdcp22;
     *pHdcp14 = useHdcp14;
     return true;
 }
 
-void DisplayMode::hdcpAuthenticate(bool useHdcp22, bool useHdcp14) {
+void DisplayMode::hdcpAuthenticate(SysWrite *pSysWrite, bool useHdcp22, bool useHdcp14) {
 #ifdef HDCP_AUTHENTICATION
 
 #if 0
@@ -1581,9 +1598,75 @@ void DisplayMode::hdcpAuthenticate(bool useHdcp22, bool useHdcp14) {
     }
     SYS_LOGI("authenticate finish\n");
 #else
+    pSysWrite = pSysWrite;
     useHdcp22 = useHdcp22;
     useHdcp14 = useHdcp14;
 #endif
+}
+
+void* DisplayMode::hdcpThreadLoop(void* data) {
+    bool hdcp22 = false;
+    bool hdcp14 = false;
+    DisplayMode *pThiz = (DisplayMode*)data;
+    SysWrite *sysWrite = pThiz->pSysWrite;
+
+    SYS_LOGI("HDCP thread loop entry\n");
+    sem_post(&pThiz->pthreadSem);
+    if (hdcpInit(sysWrite, &hdcp22, &hdcp14)) {
+        //first close osd, after HDCP authenticate completely, then open osd
+        sysWrite->writeSysfs(DISPLAY_FB0_BLANK, "1");
+
+        hdcpAuthenticate(sysWrite, hdcp22, hdcp14);
+
+        sysWrite->writeSysfs(DISPLAY_FB0_BLANK, "0");
+        sysWrite->writeSysfs(DISPLAY_FB0_FREESCALE, "0x10001");
+    }
+    return NULL;
+}
+
+int DisplayMode::hdcpThreadStart() {
+    int ret;
+    pthread_t thread_id;
+
+    SYS_LOGI("HDCP thread start\n");
+    if (pthread_mutex_lock(&pthreadMutex) == EDEADLK) {
+        SYS_LOGE("display mode create hdcp thread, Mutex is deadlock\n");
+        return -1;
+    }
+
+    ret = pthread_create(&thread_id, NULL, hdcpThreadLoop, this);
+    if (ret != 0) SYS_LOGE("display mode, thread create failed\n");
+
+    ret = sem_wait(&pthreadSem);
+    if (ret < 0) SYS_LOGE("display mode, sem_wait failed\n");
+
+    pthreadIdHdcp = thread_id;
+    pthread_mutex_unlock(&pthreadMutex);
+    SYS_LOGI("display mode, create hdcp thread thread id = %lu\n", thread_id);
+    return 1;
+}
+
+int DisplayMode::hdcpThreadExit(pthread_t thread_id) {
+    void *threadResult;
+    int ret = 1;
+
+    SYS_LOGI("HDCP thread exit pthread_exit id = %lu\n", thread_id);
+    if (0 != thread_id) {
+        if (pthread_mutex_lock(&pthreadMutex) == EDEADLK) {
+            SYS_LOGE("display mode exit hdcp thread, Mutex is deadlock\n");
+            return -1;
+        }
+
+        if (0 != pthread_join(thread_id, &threadResult)) {
+            SYS_LOGE("display mode exit failed\n");
+            ret = 0;
+        }
+
+        pthread_mutex_unlock(&pthreadMutex);
+        SYS_LOGI("display mode, pthread_exit id = %lu, %s\n", thread_id, (char *)threadResult);
+    }
+
+    return ret;
 }
 
 void DisplayMode::hdcpSwitch() {

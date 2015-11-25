@@ -29,6 +29,8 @@
 #include <map>
 #include <cmath>
 #include <string>
+#include <pthread.h>
+#include <semaphore.h>
 
 #define DEVICE_STR_MID                  "MID"
 #define DEVICE_STR_MBOX                 "MBOX"
@@ -303,8 +305,11 @@ private:
     void axisStr(const axis_t *axis, char *str);
 
     int getBootenvInt(const char* key, int defaultVal);
-    bool hdcpInit(bool *pHdcp22, bool *pHdcp14);
-    void hdcpAuthenticate(bool useHdcp22, bool useHdcp14);
+    static bool hdcpInit(SysWrite *pSysWrite, bool *pHdcp22, bool *pHdcp14);
+    static void hdcpAuthenticate(SysWrite *pSysWrite, bool useHdcp22, bool useHdcp14);
+    static void* hdcpThreadLoop(void* data);
+    int hdcpThreadStart();
+    int hdcpThreadExit(pthread_t thread_id);
 
     std::map<std::string, axis_t> mVideoAxisMap;
 
@@ -332,6 +337,10 @@ private:
     char mDefaultUI[MAX_STR_LEN];//this used for mbox
     int mLogLevel;
     SysWrite *pSysWrite = NULL;
+
+    pthread_mutex_t pthreadMutex;
+    sem_t pthreadSem;
+    pthread_t pthreadIdHdcp;
 };
 
 #endif // ANDROID_DISPLAY_MODE_H
