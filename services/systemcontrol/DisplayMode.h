@@ -81,6 +81,8 @@
 #define HDMI_UEVENT                     "DEVPATH=/devices/virtual/switch/hdmi"
 #define HDMI_POWER_UEVENT               "DEVPATH=/devices/virtual/switch/hdmi_power"
 
+#define VIDEO_LAYER1_UEVENT             "DEVPATH=/devices/virtual/switch/video_layer1"
+
 #define PROP_HDMIONLY                   "ro.platform.hdmionly"
 #define PROP_LCD_DENSITY                "ro.sf.lcd_density"
 #define PROP_WINDOW_WIDTH               "const.window.w"
@@ -233,6 +235,13 @@ typedef struct axis_s {
     int w;
     int h;
 } axis_t;
+
+typedef struct uevent_data {
+    int len;
+    char buf[1024];
+    char name[128];
+    char state[128];
+} uevent_data_t;
 
 // ----------------------------------------------------------------------------
 

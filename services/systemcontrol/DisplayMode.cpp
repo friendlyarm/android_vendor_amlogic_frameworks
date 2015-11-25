@@ -35,10 +35,20 @@
 #include <sys/types.h>
 #include <linux/netlink.h>
 
+#ifndef RECOVERY_MODE
+#include <binder/IBinder.h>
+#include <binder/IServiceManager.h>
+#include <binder/Parcel.h>
+#endif
+
 #include <cutils/properties.h>
 #include "ubootenv.h"
 #include "DisplayMode.h"
 #include "SysTokenizer.h"
+
+#ifndef RECOVERY_MODE
+using namespace android;
+#endif
 
 static const char* DISPLAY_MODE_LIST[DISPLAY_MODE_TOTAL] = {
     MODE_480I,
@@ -189,26 +199,22 @@ static int uevent_next_event(int fd, char* buffer, int buffer_length)
     return 0;
 }
 
-static bool isMatch(const char* buffer, size_t length, char* switch_state, char* switch_name) {
+static bool isMatch(uevent_data_t* ueventData, const char* matchName) {
     bool matched = false;
     // Consider all zero-delimited fields of the buffer.
-    const char* field = buffer;
-    const char* end = buffer + length + 1;
+    const char* field = ueventData->buf;
+    const char* end = ueventData->buf + ueventData->len + 1;
     do {
-        if (strstr(field, HDMI_UEVENT)) {
-            SYS_LOGI("Matched uevent message with pattern: %s", HDMI_UEVENT);
-            matched = true;
-        }
-        else if (strstr(field, HDMI_POWER_UEVENT)) {
-            SYS_LOGI("Matched uevent message with pattern: %s", HDMI_POWER_UEVENT);
+        if (strstr(field, matchName)) {
+            SYS_LOGI("Matched uevent message with pattern: %s", matchName);
             matched = true;
         }
         //SWITCH_STATE=1, SWITCH_NAME=hdmi
         else if (strstr(field, "SWITCH_STATE=")) {
-            strcpy(switch_state, field + strlen("SWITCH_STATE="));
+            strcpy(ueventData->state, field + strlen("SWITCH_STATE="));
         }
         else if (strstr(field, "SWITCH_NAME=")) {
-            strcpy(switch_name, field + strlen("SWITCH_NAME="));
+            strcpy(ueventData->name, field + strlen("SWITCH_NAME="));
         }
         field += strlen(field) + 1;
     } while (field != end);
@@ -245,9 +251,9 @@ static void* HdmiPlugDetectThread(void* data) {
 #endif
 
     //use uevent instead of usleep, because it's has some delay
-    char buffer[1024] = {0};
-    char switch_name[128] = {0};
-    char switch_state[128] = {0};
+    uevent_data_t u_data;
+
+    memset(&u_data, 0, sizeof(uevent_data_t));
     int fd = uevent_init();
     while (fd >= 0) {
         if (property_get("instaboot.status", status, "completed") &&
@@ -256,32 +262,51 @@ static void* HdmiPlugDetectThread(void* data) {
             continue;
         }
 
-        int length = uevent_next_event(fd, buffer, sizeof(buffer) - 1);
-        if (length <= 0)
+        u_data.len= uevent_next_event(fd, u_data.buf, sizeof(u_data.buf) - 1);
+        if (u_data.len <= 0)
             continue;
 
-        buffer[length] = '\0';
+        u_data.buf[u_data.len] = '\0';
 
     #if 0
         //change@/devices/virtual/switch/hdmi ACTION=change DEVPATH=/devices/virtual/switch/hdmi
         //SUBSYSTEM=switch SWITCH_NAME=hdmi SWITCH_STATE=0 SEQNUM=2791
         char printBuf[1024] = {0};
-        memcpy(printBuf, buffer, length);
-        for (int i = 0; i < length; i++) {
+        memcpy(printBuf, u_data.buf, u_data.len);
+        for (int i = 0; i < u_data.len; i++) {
             if (printBuf[i] == 0x0)
                 printBuf[i] = ' ';
         }
         SYS_LOGI("Received uevent message: %s", printBuf);
     #endif
 
-        if (isMatch(buffer, length, switch_state, switch_name)) {
-            SYS_LOGI("HDMI switch_state: %s switch_name: %s\n", switch_state, switch_name);
-            if (!strcmp(switch_name, "hdmi") ||
+        if (isMatch(&u_data, HDMI_UEVENT)
+            || isMatch(&u_data, HDMI_POWER_UEVENT)) {
+            SYS_LOGI("HDMI switch_state: %s switch_name: %s\n", u_data.state, u_data.name);
+            if (!strcmp(u_data.name, "hdmi") ||
                 //0: hdmi suspend 1:hdmi resume
-                (!strcmp(switch_name, "hdmi_power") && !strcmp(switch_state, "1"))) {
-                pThiz->setMboxDisplay(switch_state, false);
+                (!strcmp(u_data.name, "hdmi_power") && !strcmp(u_data.state, "1"))) {
+                pThiz->setMboxDisplay(u_data.state, false);
             }
         }
+
+
+#ifndef RECOVERY_MODE
+        if (isMatch(&u_data, VIDEO_LAYER1_UEVENT)) {
+            //0: no aml video data, 1: aml video data aviliable
+            if (!strcmp(u_data.name, "video_layer1") && !strcmp(u_data.state, "1")) {
+                SYS_LOGI("Video Layer1 switch_state: %s switch_name: %s\n", u_data.state, u_data.name);
+                sp<IServiceManager> sm = defaultServiceManager();
+                sp<IBinder> sf = sm->getService(String16("SurfaceFlinger"));
+                if (sf != NULL) {
+                    Parcel data;
+                    data.writeInterfaceToken(String16("android.ui.ISurfaceComposer"));
+                    //SYS_LOGI("send message to sf to repaint everything!\n");
+                    sf->transact(1004, data, NULL);
+                }
+            }
+        }
+#endif
     }
 
     return NULL;
