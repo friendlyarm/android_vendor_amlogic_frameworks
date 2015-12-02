@@ -1059,12 +1059,7 @@ void* DisplayMode::bootanimDetect(void* data) {
     //need close fb1, because uboot logo show in fb1
     pThiz->pSysWrite->writeSysfs(DISPLAY_FB1_BLANK, "1");
     pThiz->pSysWrite->writeSysfs(DISPLAY_FB1_FREESCALE, "0");
-
-    if (DISPLAY_TYPE_TV == pThiz->mDisplayType && !strncmp(outputmode, "1080", 4)) {
-        pThiz->pSysWrite->writeSysfs(DISPLAY_FB0_FREESCALE, "0");
-    } else {
-        pThiz->pSysWrite->writeSysfs(DISPLAY_FB0_FREESCALE, "0x10001");
-    }
+    pThiz->pSysWrite->writeSysfs(DISPLAY_FB0_FREESCALE, "0x10001");
 
     pThiz->pSysWrite->getPropertyString(PROP_BOOTVIDEO_SERVICE, bootvideo, "0");
     SYS_LOGI("boot animation detect boot video:%s\n", bootvideo);
@@ -1118,6 +1113,7 @@ void* DisplayMode::tmpDisableOsd(void* data){
     return NULL;
 }
 
+//this function only running in bootup time
 void DisplayMode::setTVOutputMode(const char* outputmode) {
     int outputx = 0;
     int outputy = 0;
@@ -1141,14 +1137,6 @@ void DisplayMode::setTVOutputMode(const char* outputmode) {
     sprintf(axis, "%d %d %d %d",
             outputx, outputy, outputx + outputwidth - 1, outputy + outputheight -1);
     pSysWrite->writeSysfs(DISPLAY_FB0_WINDOW_AXIS, axis);
-
-    if (outputwidth == FULL_WIDTH_4K2K) {
-        pSysWrite->writeSysfs(DISPLAY_FB0_FREESCALE_MODE, "1");
-        pSysWrite->writeSysfs(DISPLAY_FB0_FREESCALE, "0x10001");
-        //setOsdMouse(outputmode);
-    } else {
-        pSysWrite->writeSysfs(DISPLAY_FB0_FREESCALE, "0");
-    }
 
     startBootanimDetectThread();
 }
@@ -1184,12 +1172,10 @@ void DisplayMode::setTVDisplay() {
         pSysWrite->setProperty(PROP_WINDOW_HEIGHT, "1080");
     }
     if (strcmp(current_mode, outputmode)) {
-        char bootvideo[MODE_LEN] = {0};
-        char state_bootanim[MODE_LEN] = {"sleep"};
-        pSysWrite->getPropertyString(PROP_BOOTVIDEO_SERVICE, bootvideo, "0");
-        pSysWrite->getPropertyString(PROP_BOOTANIM, state_bootanim, "sleep");
-        if (!(!strcmp(bootvideo, "1") && !strcmp(state_bootanim, "running")))
-            startDisableOsdThread();
+        //when change mode, need close uboot logo to avoid logo scaling wrong
+        pSysWrite->writeSysfs(DISPLAY_FB0_BLANK, "1");
+        pSysWrite->writeSysfs(DISPLAY_FB1_BLANK, "1");
+        pSysWrite->writeSysfs(DISPLAY_FB1_FREESCALE, "0");
     }
 
     setTVOutputMode(outputmode);
