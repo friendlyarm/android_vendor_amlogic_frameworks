@@ -372,13 +372,13 @@ void DisplayMode::init() {
         }
     }
     else if (DISPLAY_TYPE_TV == mDisplayType) {
-        setTVDisplay();
+        setTVDisplay(true);
     }
 }
 
 void DisplayMode::reInit() {
 
-    SYS_LOGI("display mode init type: %d [0:none 1:tablet 2:mbox 3:tv], soc type:%s, default UI:%s",
+    SYS_LOGI("display mode reinit type: %d [0:none 1:tablet 2:mbox 3:tv], soc type:%s, default UI:%s",
         mDisplayType, mSocType, mDefaultUI);
     if (DISPLAY_TYPE_TABLET == mDisplayType) {
         setTabletDisplay();
@@ -387,7 +387,7 @@ void DisplayMode::reInit() {
         setMboxDisplay(NULL, false);
     }
     else if (DISPLAY_TYPE_TV == mDisplayType) {
-        setTVDisplay();
+        setTVDisplay(false);
     }
 }
 
@@ -1114,7 +1114,7 @@ void* DisplayMode::tmpDisableOsd(void* data){
 }
 
 //this function only running in bootup time
-void DisplayMode::setTVOutputMode(const char* outputmode) {
+void DisplayMode::setTVOutputMode(const char* outputmode, bool initState) {
     int outputx = 0;
     int outputy = 0;
     int outputwidth = 0;
@@ -1138,10 +1138,22 @@ void DisplayMode::setTVOutputMode(const char* outputmode) {
             outputx, outputy, outputx + outputwidth - 1, outputy + outputheight -1);
     pSysWrite->writeSysfs(DISPLAY_FB0_WINDOW_AXIS, axis);
 
-    startBootanimDetectThread();
+    if (outputwidth == FULL_WIDTH_4K2K) {
+        pSysWrite->writeSysfs(DISPLAY_FB0_FREESCALE_MODE, "1");
+        pSysWrite->writeSysfs(DISPLAY_FB0_FREESCALE, "0x10001");
+        //setOsdMouse(outputmode);
+    } else {
+        pSysWrite->writeSysfs(DISPLAY_FB0_FREESCALE, "0");
+    }
+    if (initState)
+        startBootanimDetectThread();
+    else {
+        pSysWrite->writeSysfs(DISPLAY_FB0_BLANK, "0");
+        setOsdMouse(outputmode);
+    }
 }
 
-void DisplayMode::setTVDisplay() {
+void DisplayMode::setTVDisplay(bool initState) {
     char current_mode[MODE_LEN] = {0};
     char outputmode[MODE_LEN] = {0};
 
@@ -1178,7 +1190,7 @@ void DisplayMode::setTVDisplay() {
         pSysWrite->writeSysfs(DISPLAY_FB1_FREESCALE, "0");
     }
 
-    setTVOutputMode(outputmode);
+    setTVOutputMode(outputmode, initState);
 }
 
 void DisplayMode::setFbParameter(const char* fbdev, struct fb_var_screeninfo var_set) {

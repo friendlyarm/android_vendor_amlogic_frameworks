@@ -291,12 +291,12 @@ private:
     bool isBestOutputmode();
     void initHdmiData(hdmi_data_t* data, char* hpdstate);
     void setMboxOutputMode(const char* outputmode, bool initState);
-    void setTVOutputMode(const char* outputmode);
+    void setTVOutputMode(const char* outputmode, bool initState);
     int modeToIndex(const char *mode);
     void startHdmiPlugDetectThread();
     void startBootanimDetectThread();
     void startDisableOsdThread();
-    void setTVDisplay();
+    void setTVDisplay(bool initState);
     void setFbParameter(const char* fbdev, struct fb_var_screeninfo var_set);
     void setVideoAxis(const char *preMode, const char *mode);
     void calcVideoAxis(const axis_t *prePosition, const axis_t *position,
