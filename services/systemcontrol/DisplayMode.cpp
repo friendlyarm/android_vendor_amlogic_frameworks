@@ -377,18 +377,30 @@ void DisplayMode::init() {
 }
 
 void DisplayMode::reInit() {
+    char boot_type[MODE_LEN] = {0};
+    char bootvideo[MODE_LEN] = {0};
+    /*
+     * the first boot time is special, no need to reInit the display 
+     * but for bootvideo we need open the osd0 here.
+     */
+    pSysWrite->readSysfs(SYSFS_BOOT_TYPE, boot_type);
+    if (strcmp(boot_type, "snapshotted")) {
+        SYS_LOGI("display mode reinit type: %d [0:none 1:tablet 2:mbox 3:tv], soc type:%s, default UI:%s",
+                mDisplayType, mSocType, mDefaultUI);
+        if (DISPLAY_TYPE_TABLET == mDisplayType) {
+            setTabletDisplay();
+        }
+        else if (DISPLAY_TYPE_MBOX == mDisplayType) {
+            setMboxDisplay(NULL, false);
+        }
+        else if (DISPLAY_TYPE_TV == mDisplayType) {
+            setTVDisplay(false);
+        }
+    }
 
-    SYS_LOGI("display mode reinit type: %d [0:none 1:tablet 2:mbox 3:tv], soc type:%s, default UI:%s",
-        mDisplayType, mSocType, mDefaultUI);
-    if (DISPLAY_TYPE_TABLET == mDisplayType) {
-        setTabletDisplay();
-    }
-    else if (DISPLAY_TYPE_MBOX == mDisplayType) {
-        setMboxDisplay(NULL, false);
-    }
-    else if (DISPLAY_TYPE_TV == mDisplayType) {
-        setTVDisplay(false);
-    }
+    SYS_LOGI("open osd0 and disable video\n");
+    pSysWrite->writeSysfs(SYS_DISABLE_VIDEO, "2");
+    pSysWrite->writeSysfs(DISPLAY_FB0_BLANK, "0");
 }
 
 void DisplayMode:: getDisplayInfo(int &type, char* socType, char* defaultUI) {
@@ -1141,7 +1153,6 @@ void DisplayMode::setTVOutputMode(const char* outputmode, bool initState) {
     if (initState)
         startBootanimDetectThread();
     else {
-        pSysWrite->writeSysfs(DISPLAY_FB0_BLANK, "0");
         setOsdMouse(outputmode);
     }
 }

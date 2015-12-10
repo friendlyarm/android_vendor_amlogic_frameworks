@@ -49,9 +49,11 @@
 #define SYSFS_DISPLAY_MODE2             "/sys/class/display2/mode"
 #define SYSFS_DISPLAY_AXIS              "/sys/class/display/axis"
 #define SYSFS_VIDEO_AXIS                "/sys/class/video/axis"
+#define SYSFS_BOOT_TYPE                 "/sys/power/boot_type"
 #define DISPLAY_FB0_BLANK               "/sys/class/graphics/fb0/blank"
 #define DISPLAY_FB1_BLANK               "/sys/class/graphics/fb1/blank"
 #define DISPLAY_LOGO_INDEX              "/sys/module/fb/parameters/osd_logo_index"
+#define SYS_DISABLE_VIDEO               "/sys/class/video/disable_video"
 
 #define DISPLAY_FB0_FREESCALE           "/sys/class/graphics/fb0/free_scale"
 #define DISPLAY_FB1_FREESCALE           "/sys/class/graphics/fb1/free_scale"
