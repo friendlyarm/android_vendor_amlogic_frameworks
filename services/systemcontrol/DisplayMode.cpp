@@ -1138,13 +1138,6 @@ void DisplayMode::setTVOutputMode(const char* outputmode, bool initState) {
             outputx, outputy, outputx + outputwidth - 1, outputy + outputheight -1);
     pSysWrite->writeSysfs(DISPLAY_FB0_WINDOW_AXIS, axis);
 
-    if (outputwidth == FULL_WIDTH_4K2K) {
-        pSysWrite->writeSysfs(DISPLAY_FB0_FREESCALE_MODE, "1");
-        pSysWrite->writeSysfs(DISPLAY_FB0_FREESCALE, "0x10001");
-        //setOsdMouse(outputmode);
-    } else {
-        pSysWrite->writeSysfs(DISPLAY_FB0_FREESCALE, "0");
-    }
     if (initState)
         startBootanimDetectThread();
     else {
