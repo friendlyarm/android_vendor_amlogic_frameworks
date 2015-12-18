@@ -100,6 +100,7 @@ private:
     void handleInitMountDataFail();
     int getDataRoCountMax();
     bool isRebooting();
+    bool isInstabooting();
     int doMount(char *name, char *device);
 };
 #endif

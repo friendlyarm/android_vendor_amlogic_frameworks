@@ -204,6 +204,9 @@ void DigManager::HanldeSysChksumError(char* error_file_path) {
     if (isRebooting())
         return;
 
+    if (isInstabooting())
+        return;
+
     if (!mBootCompleted) {
         //reboot into recovery to restore system
         ERROR("HanldeSysChksumError doRestoreSystem\n");
@@ -301,6 +304,9 @@ void DigManager::handleDataRo() {
     if (isRebooting())
         return;
 
+    if (isInstabooting())
+        return;
+
     if (!mBootCompleted) {
         int count = getDataRoCount();
         ERROR("handleDataRo count:%d\n", count);
@@ -334,6 +340,9 @@ void DigManager::handleCacheRo() {
     if (isRebooting())
         return;
 
+    if (isInstabooting())
+        return;
+
     char cache_dev[] = "/dev/block/cache";
     char target[] = "/cache";
 
@@ -362,6 +371,9 @@ void DigManager::handleCacheRo() {
 
 void DigManager::handleCacheNull() {
     if (isRebooting())
+        return;
+
+    if (isInstabooting())
         return;
 
     char cache_dev[] = "/dev/block/cache";
@@ -574,6 +586,15 @@ bool DigManager::isRebooting() {
     char powerctl[PROPERTY_VALUE_MAX] = {0};
     property_get(ANDROID_RB_PROPERTY, powerctl, "");
     if (strstr(powerctl, "reboot") != NULL) {
+        return true;
+    }
+    return false;
+}
+
+bool DigManager::isInstabooting() {
+    char prop[PROPERTY_VALUE_MAX] = {0};
+    property_get("instaboot.status", prop, "");
+    if (strcmp(prop, "booting") == 0 || strcmp(prop, "restored") == 0 || strcmp(prop, "prepare") == 0) {
         return true;
     }
     return false;
