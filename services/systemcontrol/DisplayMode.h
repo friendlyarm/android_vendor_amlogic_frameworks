@@ -227,6 +227,13 @@ enum {
     DISPLAY_MODE_TOTAL                  = 21
 };
 
+typedef enum {
+    OUPUT_MODE_STATE_INIT               = 0,
+    OUPUT_MODE_STATE_POWER              = 1,
+    OUPUT_MODE_STATE_SWITCH             = 2,
+    OUPUT_MODE_STATE_RESERVE            = 3
+}output_mode_state;
+
 typedef struct hdmi_data {
     char edid[MAX_STR_LEN];
     char hpd_state[10];//"0" or "1", hdmi pluged or not
@@ -273,7 +280,7 @@ public:
     static void* bootanimDetect(void *data);
     static void* tmpDisableOsd(void *data);
 
-    void setMboxDisplay(char* hpdstate, bool initState);
+    void setMboxDisplay(char* hpdstate, output_mode_state state);
 
     void setNativeWindowRect(int x, int y, int w, int h);
     void setVideoPlaying(bool playing);
@@ -292,7 +299,7 @@ private:
     bool isEdidChange();
     bool isBestOutputmode();
     void initHdmiData(hdmi_data_t* data, char* hpdstate);
-    void setMboxOutputMode(const char* outputmode, bool initState);
+    void setMboxOutputMode(const char* outputmode, output_mode_state state);
     void setTVOutputMode(const char* outputmode, bool initState);
     int modeToIndex(const char *mode);
     void startHdmiPlugDetectThread();
