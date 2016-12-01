@@ -916,7 +916,15 @@ void DisplayMode::setVideoAxis(const char *preMode, const char *mode) {
 
 //get the best hdmi mode by edid
 void DisplayMode::getBestHdmiMode(char* mode, hdmi_data_t* data) {
-    char* pos = strchr(data->edid, '*');
+    char *pos = strchr(data->edid, '*');
+    //SYS_LOGI("edid: %s\n", data->edid);
+
+    pSysWrite->getPropertyString(PROP_BEST_OUTPUT_MODE, mode, "");
+    if (strlen(mode) > 3 && strstr(data->edid, mode)) {
+        SYS_LOGI("set HDMI to best output mode: %s\n", mode);
+        return;
+    }
+
     if (pos != NULL) {
         char* findReturn = pos;
         while (*findReturn != 0x0a && findReturn >= data->edid) {
